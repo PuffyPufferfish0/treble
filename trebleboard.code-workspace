@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "trebleboard",
+			"path": "../Documents/PlatformIO/Projects/trebleboard"
+		},
+		{
+			"name": "treble",
+			"path": "."
+		},
+		{
+			"name": "treble",
+			"path": "../Documents/PlatformIO/Projects/treble"
+		}
+	],
+	"settings": {}
+}

@@ -1,0 +1,119 @@
+AudioBook Adventure Device: Prototype Blueprint
+
+This document outlines the hardware wiring and software architecture for the ESP32-S3 AudioBook prototype.
+
+1. Hardware Wiring Guide (Breadboard)
+
+The ESP32-S3 has flexible pin routing, but it's best to keep high-speed data lines (like Audio and SD storage) grouped logically. Important: Run all of these peripherals off the ESP32's 3V3 (3.3V) pin, not the 5V (VBUS) pin, to protect the logic levels.
+
+I2S Audio DAC (PCM5102A)
+
+The DAC handles decoding the digital audio stream into analog signals for your headphones.
+
+VCC -> 3V3
+
+GND -> GND
+
+SCK -> GND (Grounding the system clock pin forces the DAC to generate its own clock, saving an ESP32 pin).
+
+BCK (Bit Clock) -> GPIO 4
+
+LRCK (Word Select) -> GPIO 5
+
+DIN (Data In) -> GPIO 6
+
+MicroSD Card Module
+
+The SD card uses the standard SPI protocol.
+
+VCC -> 3V3
+
+GND -> GND
+
+MOSI -> GPIO 11
+
+MISO -> GPIO 12
+
+SCK (Clock) -> GPIO 13
+
+CS (Chip Select) -> GPIO 10
+
+Nintendo Switch Joystick (via Breakout Board)
+
+The joystick uses two potentiometers to act as voltage dividers.
+
+VCC -> 3V3
+
+GND -> GND
+
+X-Axis -> GPIO 1 (ADC1_CH0)
+
+Y-Axis -> GPIO 2 (ADC1_CH1)
+
+Trigger Button
+
+A simple tactile switch for making selections.
+
+Side A -> GPIO 15
+
+Side B -> GND
+
+Note: We will use INPUT_PULLUP in the code, so no external resistor is needed.
+
+2. Firmware Architecture (C++)
+
+The ESP32 firmware will be built around a Non-Blocking State Machine. Because decoding MP3s from an SD card requires constant CPU attention, you cannot use delay() functions anywhere in your code, or the audio will stutter.
+
+Core Libraries Required
+
+SD.h & SPI.h: For reading the SD card.
+
+ArduinoJson.h: For parsing the IDE's exported .json file.
+
+ESP32-audioI2S: An excellent, highly optimized library for playing MP3s natively through an I2S DAC.
+
+The Game Loop (State Machine)
+
+The loop runs thousands of times per second, executing these steps:
+
+Feed the Audio Buffer:
+Call audio.loop(). This keeps the I2S stream filled with MP3 data.
+
+Poll the Inputs:
+
+Read the X and Y ADC values from the joystick.
+
+Read the digital state of the trigger button.
+
+Determine Joystick Zone:
+Map the raw ADC values (0-4095) into 5 zones: CENTER_DEADZONE, UP, DOWN, LEFT, RIGHT.
+
+Handle Audio Interruptions:
+
+If the user moves from CENTER to UP, check the current JSON node for an "up" branch.
+
+If an "up" branch exists, stop the current ambient track and start playing the "preview" track for the up direction.
+
+If the user returns to CENTER, stop the preview track and resume the main ambient track.
+
+Handle Selection:
+
+If the trigger button is pressed while the joystick is held in a valid direction, update the currentNodeId to the destination node.
+
+Load the new node's data, start playing its ambient track, and reset the joystick state.
+
+3. Data Structure
+
+When the device boots, it will look for a story.json file on the SD card. It will parse this file into an array of C++ Structs in the ESP32's RAM.
+
+struct Connection {
+    String direction; // "up", "down", "left", "right"
+    String targetNodeId;
+};
+
+struct StoryNode {
+    String id;
+    String title;
+    String ambientAudioFile; // e.g., "/audio/node_12_ambient.mp3"
+    std::vector<Connection> branches; 
+};

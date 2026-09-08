@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { exec } from 'child_process'
 
 function createWindow() {
   // Create the browser window.
@@ -13,7 +14,10 @@ function createWindow() {
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      // Need this for IPC to work directly in React for the prototype
+      nodeIntegration: true,
+      contextIsolation: false
     }
   })
 
@@ -49,8 +53,28 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  // Native Linux TTS Integration
+  ipcMain.on('tts-play', (event, text) => {
+    // 1. Kill any existing speech FIRST, and wait for it to finish
+    exec('killall spd-say', () => {
+
+      // 2. ONLY start the new speech after the old one is dead
+      const safeText = text.replace(/"/g, '\\"');
+      exec(`spd-say -w "${safeText}"`, (error, stdout, stderr) => {
+        if (error) console.error("Node Audio Error:", stderr);
+
+        // 3. Tell React to switch the "Stop" button back to "Play"
+        event.reply('tts-end');
+      });
+
+    });
+  });
+
+  ipcMain.on('tts-stop', (event) => {
+    exec('killall spd-say', () => {
+      event.reply('tts-end');
+    });
+  });
 
   createWindow()
 
@@ -70,5 +94,5 @@ app.on('window-all-closed', () => {
   }
 })
 
-// In this file you can include the rest of your app's specific main process
+// In this file you can include the rest of your app"s specific main process
 // code. You can also put them in separate files and require them here.

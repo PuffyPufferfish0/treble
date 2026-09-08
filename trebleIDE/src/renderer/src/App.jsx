@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Play, ArrowLeft, Plus, Move, FileJson, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Volume2, Square } from 'lucide-react';
+import { Settings, Play, ArrowLeft, Plus, Move, FileJson, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, X, Volume2, Square, RefreshCw } from 'lucide-react';
 
 // --- Default Starting State ---
 const INITIAL_NODE = {
@@ -20,6 +20,19 @@ export default function App() {
 
   // TTS State
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
+
+  // Setup Node.js IPC Listeners
+  useEffect(() => {
+    if (window.electron) {
+      const handleEnd = () => setIsPlayingTTS(false);
+      window.electron.ipcRenderer.on('tts-end', handleEnd);
+
+      // Cleanup listener on unmount
+      return () => {
+        window.electron.ipcRenderer.removeAllListeners('tts-end');
+      };
+    }
+  }, []);
 
   // Panning & Dragging State
   const [pan, setPan] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -55,13 +68,10 @@ export default function App() {
 
   const handleNodePointerDown = (e, id) => {
     e.stopPropagation();
-    // Differentiate between click (to open) and drag
     setDraggedNode(id);
   };
 
   const handleNodeClick = (id) => {
-    // Only open editor if we didn't drag it significantly
-    // For simplicity in this prototype, dragging also selects, but a button opens the editor
     setActiveNodeId(id);
     setView('editor');
   };
@@ -84,7 +94,6 @@ export default function App() {
   const createBranch = (dir) => {
     const newId = Math.random().toString(36).substr(2, 9);
 
-    // Auto-position based on direction
     let offsetX = 0;
     let offsetY = 0;
     const SPACING = 200;
@@ -109,27 +118,22 @@ export default function App() {
     const conn = connections.find(c => c.from === activeNodeId && c.dir === dir);
     if (conn) {
       setConnections(prev => prev.filter(c => c !== conn));
-      // Note: We leave the node intact in case other things connect to it,
-      // but you could also garbage collect orphaned nodes here.
     }
   };
 
-  // --- TTS Functions ---
+  // --- TTS Functions (Native Node.js) ---
   const playTTS = (text) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Stop any current speech
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => setIsPlayingTTS(false);
+    if (window.electron) {
+      window.electron.ipcRenderer.send('tts-play', text);
       setIsPlayingTTS(true);
-      window.speechSynthesis.speak(utterance);
     } else {
-      alert("Text-to-speech is not supported in this browser/environment.");
+      alert("Electron IPC not detected! Make sure you are running via 'npm run dev'.");
     }
   };
 
   const stopTTS = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (window.electron) {
+      window.electron.ipcRenderer.send('tts-stop');
       setIsPlayingTTS(false);
     }
   };
@@ -160,22 +164,20 @@ export default function App() {
             const toNode = nodes.find(n => n.id === conn.to);
             if (!fromNode || !toNode) return null;
 
-            // Arrow logic
             const dx = toNode.x - fromNode.x;
             const dy = toNode.y - fromNode.y;
             const angle = Math.atan2(dy, dx);
 
-            // Start line outside the radius of the circle
             const startX = fromNode.x + Math.cos(angle) * NODE_RADIUS;
             const startY = fromNode.y + Math.sin(angle) * NODE_RADIUS;
-            const endX = toNode.x - Math.cos(angle) * (NODE_RADIUS + 10); // +10 for arrow head room
+            const endX = toNode.x - Math.cos(angle) * (NODE_RADIUS + 10);
             const endY = toNode.y - Math.sin(angle) * (NODE_RADIUS + 10);
 
-            let strokeColor = "#94a3b8"; // slate-400
-            if (conn.dir === 'up') strokeColor = "#3b82f6"; // blue
-            if (conn.dir === 'down') strokeColor = "#eab308"; // yellow
-            if (conn.dir === 'left') strokeColor = "#ef4444"; // red
-            if (conn.dir === 'right') strokeColor = "#22c55e"; // green
+            let strokeColor = "#94a3b8";
+            if (conn.dir === 'up') strokeColor = "#3b82f6";
+            if (conn.dir === 'down') strokeColor = "#eab308";
+            if (conn.dir === 'left') strokeColor = "#ef4444";
+            if (conn.dir === 'right') strokeColor = "#22c55e";
 
             return (
               <g key={`${conn.from}-${conn.to}-${idx}`}>
@@ -209,7 +211,6 @@ export default function App() {
                <span className="text-xs font-bold text-center px-2 truncate w-full">{node.title}</span>
             </div>
 
-            {/* Context menu that appears on hover */}
             <div className="absolute top-24 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2 bg-slate-800 p-1 rounded-md shadow-lg border border-slate-700">
               <button
                 onClick={(e) => { e.stopPropagation(); handleNodeClick(node.id); }}
@@ -292,7 +293,7 @@ export default function App() {
         <textarea
           value={activeNode.text}
           onChange={(e) => updateActiveNode({ text: e.target.value })}
-          className="bg-slate-800 text-white border border-slate-700 rounded-lg p-3 h-40 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow resize-none"
+          className="bg-slate-800 text-white border border-slate-700 rounded-lg p-3 h-40 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow resize-none"
           placeholder="Write the descriptive text here..."
         />
 
@@ -303,10 +304,10 @@ export default function App() {
             className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${isPlayingTTS ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}
           >
             {isPlayingTTS ? <Square size={16} className="mr-2" /> : <Volume2 size={16} className="mr-2" />}
-            {isPlayingTTS ? 'Stop Playback' : 'Listen to Narrative'}
+            {isPlayingTTS ? 'Stop Playback' : 'Listen via Node.js'}
           </button>
           <span className="text-slate-500 text-xs">
-            Uses system Text-to-Speech to preview the node's narrative.
+            Uses native Linux spd-say (via Node.js) to preview narrative.
           </span>
         </div>
       </div>
@@ -383,4 +384,3 @@ export default function App() {
     </div>
   );
 }
-
