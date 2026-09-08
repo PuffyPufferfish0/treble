@@ -1,4 +1,4 @@
-# ESP32 I2S Audio Player
+# ESP32 I2S Audio Player -Treble
 
 A hardware-based audio player built around the ESP32, utilizing a PCM5102A DAC for high-quality I2S digital audio output, a MicroSD card reader for storage, and an analog joystick for intuitive control.
 
