@@ -1,6 +1,7 @@
 # trebleide
 
-An Electron application with React\ 
+An Electron application with React\
+
 note that this WAS vibecoded, and I will likely remake it before an official release.\
 As of now this is more a way to test run the hardware
 
